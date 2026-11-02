@@ -17,13 +17,8 @@ export function Avatar({ av, team, size = 40, down }: { av: number; team?: Team 
   );
 }
 
-export function Logo({ big }: { big?: boolean }) {
-  return (
-    <div className={`logo ${big ? 'big' : ''}`} aria-label="Cyber War">
-      <span className="logo-a">CYBER</span><span className="logo-b">WAR</span>
-    </div>
-  );
-}
+import { Logo } from './Logo.tsx';
+export { Logo };
 
 // re-renderiza a cada 250 ms para relógios e barras
 export function useClock(ms = 250) {

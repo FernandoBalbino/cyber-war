@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { ChevronLeft, ChevronRight, Maximize } from 'lucide-react';
-import { Logo } from './ui.tsx';
+import { Logo } from './Logo.tsx';
 import './slides.css';
 
 // Apresentação da aula: 1º o vídeo do jogo, depois LGPD. O professor passa com ← → ou o passador de slides.
