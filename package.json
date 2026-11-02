@@ -1,0 +1,33 @@
+{
+  "name": "cyber-war",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "vite",
+    "server": "node --watch server/index.ts",
+    "start": "node server/index.ts",
+    "build": "vite build",
+    "test": "node --test server/game.test.ts",
+    "check": "tsc --noEmit",
+    "e2e": "node tests/e2e.mjs"
+  },
+  "dependencies": {
+    "socket.io": "^4.8.4"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.2.1",
+    "lucide-react": "^1.66.0",
+    "playwright": "^1.64.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "socket.io-client": "^4.8.4",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5"
+  }
+}
