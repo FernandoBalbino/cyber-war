@@ -55,3 +55,11 @@ PW_CHANNEL=msedge npm run e2e
 ```
 
 Os prints ficam em `docs/prints/`.
+
+Sala local com bots para jogar como aluno (o script faz o papel do professor):
+
+```bash
+npm run server
+npm run dev -- --host
+npm run bots -- 7
+```

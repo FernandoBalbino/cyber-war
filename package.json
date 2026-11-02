@@ -12,7 +12,8 @@
     "build": "vite build",
     "test": "node --test server/game.test.ts",
     "check": "tsc --noEmit",
-    "e2e": "node tests/e2e.mjs"
+    "e2e": "node tests/e2e.mjs",
+    "bots": "node tests/bots.mjs"
   },
   "dependencies": {
     "socket.io": "^4.8.4"
