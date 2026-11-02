@@ -32,6 +32,7 @@ jobs:
         env:
           BASE: /${{ github.event.repository.name }}/
           VITE_SERVER_URL: ${{ vars.SERVER_URL }}
+      - run: mkdir -p dist/slide && cp dist/index.html dist/slide/index.html # /slide abre direto no Pages
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

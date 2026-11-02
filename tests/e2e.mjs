@@ -1,8 +1,11 @@
-// Teste local de ponta a ponta + prints. Precisa do servidor (npm start) e do site (npx vite preview) rodando.
-// Uso: node tests/e2e.mjs [urlDoSite] [urlDoServidor]
+// Teste local de ponta a ponta + prints. Rode o servidor com tempos curtos e o site buildado:
+//   CW_SPEED=12 node server/index.ts      (recarga de 5 s, eventos a cada 5–15 s)
+//   npx vite preview --port 4173
+//   PW_CHANNEL=msedge node tests/e2e.mjs
 import { chromium } from 'playwright';
 import { io } from 'socket.io-client';
 import { mkdirSync } from 'node:fs';
+import { MOVES, makeMaze, solve, step } from '../shared/maze.ts';
 
 const SITE = process.argv[2] ?? 'http://localhost:4173/';
 const SERVER = process.argv[3] ?? 'http://localhost:3001';
@@ -23,205 +26,189 @@ async function open(name) {
 }
 const shot = (page, file) => page.screenshot({ path: `${OUT}/${file}.png` });
 
-// ---- robôs: alunos simulados via socket ----
-function bot(name, av) {
+function bot(name) {
   const s = io(SERVER, { transports: ['websocket'] });
   const st = { me: null, bank: [], board: null, players: [] };
   s.on('view', (v) => Object.assign(st, v));
   const call = (ev, d = {}) => new Promise((r) => s.emit(ev, d, r));
-  s.on('fx', (f) => {
-    if (f.t === 'alert' && st.me?.team === 'def' && name === BLOCKER) setTimeout(() => call('block'), 900);
-  });
-  // defensores robôs respondem os desafios (nem sempre certo)
-  setInterval(() => {
-    const q = st.me?.quiz;
-    if (q && !q.done) { q.done = true; setTimeout(() => call('answer', { id: q.id, choice: Math.floor(Math.random() * q.opts.length) }), 1500); }
-  }, 500);
   return { name, s, st, call };
 }
-let BLOCKER = '';
 
+// ---- professor cria a sala, alunos entram ----
 const prof = await open('prof');
 await prof.goto(SITE + '#prof');
-await prof.waitForSelector('text=Criar sala');
-await shot(prof, '01-professor-inicio');
 await prof.click('text=Criar sala');
 await prof.waitForSelector('.big-code');
 const code = (await prof.locator('.big-code').innerText()).replace(/\s/g, '');
 console.log('sala', code);
 
-const ana = await open('ana');
-await ana.goto(`${SITE}?sala=${code}`);
-await ana.fill('input[placeholder="Como quer aparecer"]', 'Ana');
-await ana.click('.av-pick >> nth=0');
-await shot(ana, '02-aluno-entrada');
-await ana.click('button:has-text("Entrar")');
-await ana.waitForSelector('.lobby');
-
-const bruno = await open('bruno');
-await bruno.goto(`${SITE}?sala=${code}`);
-await bruno.fill('input[placeholder="Como quer aparecer"]', 'Bruno');
-await bruno.click('.av-pick >> nth=5');
-await bruno.click('button:has-text("Entrar")');
-await bruno.waitForSelector('.lobby');
-
-const names = ['Carla', 'Davi', 'Enzo', 'Fabi', 'Gabi', 'Heitor'];
-const bots = names.map((n, i) => bot(n, (i * 3 + 2) % 16));
-await sleep(500);
-for (const b of bots) { const r = await b.call('join', { code, name: b.name, av: names.indexOf(b.name) * 3 % 16 + 1 }); if (!r.ok) throw new Error(r.err); }
-await sleep(800);
-await shot(ana, '03-aluno-sala-de-espera');
-await shot(prof, '04-professor-sala');
-
-// sorteia até Ana defender e Bruno invadir (só para os prints)
-for (let i = 0; i < 30; i++) {
-  await prof.click('button:has-text("Sortear equipes")');
-  await sleep(350);
-  const a = await ana.locator('.role-reveal').innerText().catch(() => '');
-  const b = await bruno.locator('.role-reveal').innerText().catch(() => '');
-  if (/defensor/i.test(a) && /invasor/i.test(b)) break;
+async function join(name, av) {
+  const p = await open(name);
+  await p.goto(`${SITE}?sala=${code}`);
+  await p.fill('input[placeholder="Como quer aparecer"]', name);
+  await p.click(`.av-pick >> nth=${av}`);
+  await p.click('button:has-text("Entrar")');
+  await p.waitForSelector('.lobby');
+  return p;
 }
-await sleep(700);
-await shot(ana, '05-aluno-equipe-sorteada');
-await shot(prof, '06-professor-equipes');
+const ana = await join('Ana', 0);
+const bruno = await join('Bruno', 5);
+const names = ['Carla', 'Davi', 'Enzo', 'Fabi', 'Gabi', 'Heitor'];
+const bots = names.map(bot);
+await sleep(400);
+for (const [i, b] of bots.entries()) { const r = await b.call('join', { code, name: b.name, av: (i * 3 + 2) % 16 }); if (!r.ok) throw new Error(r.err); }
+await sleep(600);
+
+// ---- professor monta as equipes à mão (por fileira) e ajusta o tempo ----
+const pick = (n, t) => prof.click(`.pcard:has-text("${n}") .team-pick button.${t}`);
+await prof.click('.minutes button[aria-label="Mais 5 minutos"]');
+await sleep(250);
+await prof.click('.minutes button[aria-label="Menos 5 minutos"]');
+await pick('Ana', 'def'); await pick('Bruno', 'inv'); await pick('Carla', 'def');
+await sleep(500);
+await prof.hover('.pcard:has-text("Davi") .team-pick button.inv');
+await shot(prof, '30-professor-montando-equipes');
+for (const n of ['Davi', 'Enzo']) await pick(n, 'def');
+for (const n of ['Fabi', 'Gabi', 'Heitor']) await pick(n, 'inv');
+await prof.mouse.move(5, 5);
+await sleep(600);
+await shot(prof, '31-professor-equipes-prontas');
+await shot(ana, '32-aluno-equipe-definida');
 
 await prof.click('button:has-text("Iniciar partida")');
-await ana.waitForSelector('.pw-panel');
+await ana.waitForSelector('.maze-panel');
 await bruno.waitForSelector('.bank-grid');
-await sleep(1200);
-await shot(ana, '07-defensor-preparacao');
-await shot(bruno, '08-invasor-banco-preparacao');
+await sleep(1000);
+await shot(ana, '33-defensor-preparacao-labirinto');
 
-// senhas reais (o professor pode ver) — usadas só para guiar os robôs
+// dicas das ferramentas
+for (const [i, t] of ['Expandir banco', 'Comprimento', 'Composição', 'Rastrear'].entries()) {
+  await bruno.hover(`button.tool:has-text("${t}")`);
+  await sleep(450);
+  await shot(bruno, `3${4 + i}-dica-${t.toLowerCase().normalize('NFD').replace(/[^a-z]/g, '')}`);
+}
+await bruno.mouse.move(5, 5);
+await ana.hover('button:has-text("Trocar 1 letra")');
+await sleep(450);
+await shot(ana, '38-dica-trocar-letra');
+await ana.mouse.move(5, 5);
+
+// senhas reais (o professor pode ver) — só para guiar os robôs
 await prof.click('button:has-text("Mostrar senhas")');
 await sleep(300);
 const secret = {};
-for (const c of await prof.locator('.dcard').all()) {
-  const n = await c.locator('.dcard-name').innerText();
-  secret[n] = await c.locator('.dcard-sub').innerText();
-}
-await shot(prof, '09-professor-preparacao');
+for (const c of await prof.locator('.dcard').all()) secret[await c.locator('.dcard-name').innerText()] = await c.locator('.dcard-sub').innerText();
 await prof.click('button:has-text("Esconder senhas")');
 await prof.click('button:has-text("Começar agora")');
 await sleep(800);
-
+const realWords = new Set(Object.values(secret));
 const byName = (st, n) => st.players.find((p) => p.name === n);
 const invBots = bots.filter((b) => b.st.me?.team === 'inv');
-const defBots = bots.filter((b) => b.st.me?.team === 'def');
-BLOCKER = defBots[1]?.name ?? '';
-const target = defBots[0].name; // alvo principal da equipe vermelha
-console.log('def', defBots.map((b) => b.name), 'inv', invBots.map((b) => b.name), 'alvo', target);
-const realWords = new Set(Object.values(secret));
+const target = 'Carla';
 
 async function wave(defName, n = 99) {
   for (const b of invBots.slice(0, n)) {
     const d = byName(b.st, defName);
     const struck = new Set(b.st.board?.strikes[d.id] ?? []);
     const opts = b.st.bank.filter(([id, w]) => !struck.has(id) && !realWords.has(w));
-    const [id] = opts[Math.floor(Math.random() * opts.length)];
-    await b.call('attempt', { def: d.id, entry: id });
+    const r = await b.call('attempt', { def: d.id, entry: opts[Math.floor(Math.random() * opts.length)][0] });
+    if (!r.ok) console.log('bot', b.name, r.err);
   }
 }
-
-// ondas de ataque contra o alvo + ferramentas
-await invBots[0].call('tool', { kind: 'len', def: byName(invBots[0].st, target).id });
-await invBots[1]?.call('tool', { kind: 'comp', def: byName(invBots[1].st, target).id });
-for (let i = 0; i < 4; i++) {
-  await wave(target);
-  await sleep(4600);
-  await prof.click('button:has-text("Força bruta")');
-  await sleep(300);
+async function quietQuiz(p) { // responde desafio aberto para não cobrir os prints
+  if (await p.locator('.quiz-opts button:not([disabled])').count()) { await p.click('.quiz-opts button >> nth=0'); await sleep(4300); }
 }
 
-// Ana sob ataque: alerta com botão de bloquear
-await wave('Ana', 1);
-await sleep(1400);
-await shot(ana, '10-defensor-sob-ataque');
-await ana.click('button:has-text("Bloquear")');
-await sleep(900);
-await shot(ana, '11-defensor-bloqueou');
-
-// Bruno escolhe o alvo, usa ferramentas e vê o banco riscado
-await bruno.click(`.dcard:has-text("${target}")`);
-await bruno.click('button.tool:has-text("Rastrear")');
+// ---- labirinto da Ana ----
+await quietQuiz(ana);
+await ana.click('.maze-start button:has-text("Jogar")');
+await ana.waitForSelector('.maze');
 await sleep(500);
-for (const c of await bruno.locator('.bank-grid .chip:not(.struck):not(.nofit):not(.found)').all()) {
-  if (!realWords.has(await c.innerText())) { await c.click(); break; }
+await shot(ana, '39-labirinto-inicio');
+const m = makeMaze(Number(await ana.getAttribute('.maze', 'data-seed')));
+const keyOf = { U: 'ArrowUp', D: 'ArrowDown', L: 'ArrowLeft', R: 'ArrowRight' };
+const press = async (path, after) => {
+  for (let i = 0; i < path.length; i++) { await ana.keyboard.press(keyOf[path[i]]); await sleep(110); await after?.(i); }
+};
+// 1) cai de propósito no phishing mais perto
+const prev = new Map([[m.start, null]]);
+const q = [m.start];
+let trapRoute = '';
+for (let i = 0; i < q.length && !trapRoute; i++) {
+  const c = q[i];
+  for (const mv of Object.keys(MOVES)) {
+    if (!(m.cells[c] & MOVES[mv])) continue;
+    const n = step(c, MOVES[mv]);
+    if (m.traps.includes(n)) {
+      let r = mv;
+      for (let x = c; prev.get(x); x = prev.get(x)[0]) r = prev.get(x)[1] + r;
+      trapRoute = r;
+      break;
+    }
+    if (!prev.has(n)) { prev.set(n, [c, mv]); q.push(n); }
+  }
 }
-await sleep(300);
-await shot(bruno, '12-invasor-mirando');
-await bruno.click('button:has-text("Atacar")');
-await sleep(1500);
-await shot(bruno, '13-invasor-quebrando');
-await sleep(3500);
-await shot(bruno, '14-invasor-errou-riscada');
+await press(trapRoute.slice(0, -1));
+await sleep(500);
+await ana.keyboard.press(keyOf[trapRoute.at(-1)]);
+await sleep(180);
+await shot(ana, '40-labirinto-phishing');
+await sleep(900);
+// 2) caminho até o baú; print no meio e um ataque chegando enquanto joga
+const route = solve(m);
+const second = (() => { let got = 0, pos = m.start; for (let i = 0; i < route.length; i++) { pos = step(pos, MOVES[route[i]]); if (m.items.includes(pos) && ++got === 2) return i; } return 10; })();
+await press(route, async (i) => {
+  if (i === second) { await sleep(400); await shot(ana, '41-labirinto-meio'); }
+  if (i === second + 3) {
+    await quietQuiz(ana);
+    await wave('Ana', 1);
+    await sleep(1200);
+    await shot(ana, '42-labirinto-sob-ataque');
+    await ana.keyboard.press('Space');
+    await sleep(700);
+  }
+});
+await ana.waitForSelector('.chest-open');
+await sleep(800);
+await shot(ana, '43-bau-aberto');
+await ana.click('.chest-choices button:has-text("+1 bloqueio")');
+await sleep(900);
+await shot(ana, '44-bau-premio');
 
-// Ana troca um caractere
-await ana.click('button:has-text("Trocar 1 caractere")');
-await ana.click('.tile >> nth=1');
-await ana.fill('.edit-row input', '@');
-await shot(ana, '15-defensor-trocando');
-await ana.click('.edit-row button:has-text("Trocar")');
+// ---- evento surpresa automático ----
+await bruno.waitForSelector('.toast.big', { state: 'detached', timeout: 8000 }).catch(() => {});
+await bruno.waitForSelector('.toast.big', { timeout: 40_000 });
 await sleep(600);
+await shot(bruno, '45-evento-surpresa');
 
-// desafio LGPD para todos
-await prof.click('button:has-text("Desafio LGPD")');
-await ana.waitForSelector('.quiz');
-await sleep(600);
-await shot(ana, '16-defensor-desafio');
-await ana.click('.quiz-opts button >> nth=0');
-await sleep(700);
-await shot(ana, '17-defensor-desafio-resposta');
-await bruno.click('.quiz-opts button >> nth=1').catch(() => {});
-
-// Bruno quebra a senha do alvo: vinheta para todos
-await prof.click('button:has-text("Força bruta")');
-await sleep(400);
+// ---- invasores trabalham e Bruno quebra a senha da Carla ----
+await invBots[0].call('tool', { kind: 'len', def: byName(invBots[0].st, target).id });
+for (let i = 0; i < 3; i++) { await wave(target); await sleep(5600); }
+await bruno.click(`.dcard:has-text("${target}")`);
 await bruno.fill('.search input', secret[target].toLowerCase());
 await sleep(200);
 await bruno.click(`.bank-grid .chip:text-is("${secret[target]}")`);
 await bruno.fill('.search input', '');
-await bruno.click('button:has-text("Atacar")');
-await ana.waitForSelector('.vig', { timeout: 8000 });
+await bruno.waitForSelector('button.attack:not([disabled])', { timeout: 15_000 });
+await bruno.click('button.attack');
+await ana.waitForSelector('.vig', { timeout: 10_000 });
 await sleep(1100);
-await shot(ana, '18-vinheta-defensor-descoberto');
-await shot(prof, '19-vinheta-professor');
-await sleep(2600);
-await shot(bruno, '20-invasor-depois-do-acerto');
-await shot(prof, '21-professor-ao-vivo');
-await shot(ana, '22-defensor-ao-vivo');
-
-// mais uma senha cai (robô) para o resultado ficar interessante
-await prof.click('button:has-text("Força bruta")');
-await sleep(300);
-const d2 = defBots[2] ?? defBots[1];
-const e2 = invBots[0].st.bank.find(([, w]) => w === secret[d2.name]);
-await invBots[0].call('attempt', { def: byName(invBots[0].st, d2.name).id, entry: e2[0] });
-await sleep(7500);
+await shot(ana, '46-vinheta-no-labirinto');
+await sleep(2400);
+await shot(bruno, '47-invasor-depois-do-acerto');
+await shot(prof, '48-professor-ao-vivo');
+await prof.click('button:has-text("+2 min")');
+await sleep(500);
+await shot(prof, '49-professor-mais-2-min');
 
 await prof.click('button:has-text("Encerrar")');
 await ana.waitForSelector('.winner');
 await sleep(1500);
-await shot(ana, '23-resultado-aluno');
-await shot(bruno, '24-resultado-invasor');
-await shot(prof, '25-resultado-professor');
-await ana.setViewportSize({ width: 1366, height: 1100 });
-await sleep(400);
-await shot(ana, '26-resultado-completo');
-
-// segunda rodada com equipes invertidas
-await prof.click('button:has-text("Inverter equipes e jogar")');
-await ana.setViewportSize(vp);
-await ana.waitForSelector('.bank-grid');
-await sleep(1000);
-await shot(ana, '27-rodada2-ana-invasora');
-
-// tela pequena (celular)
-const phone = await open('phone');
-await phone.setViewportSize({ width: 390, height: 844 });
-await phone.goto(SITE);
+await shot(prof, '50-resultado-professor');
+await prof.click('button:has-text("Montar equipes")');
+await prof.waitForSelector('.team-pick');
 await sleep(800);
-await shot(phone, '28-celular-entrada');
+await shot(prof, '51-professor-remontar-equipes');
 
 console.log(errors.length ? `ERROS:\n${errors.join('\n')}` : 'sem erros no console');
 for (const b of bots) b.s.close();

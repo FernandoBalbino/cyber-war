@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { Shield, Swords, Lock, LockOpen } from 'lucide-react';
 import { serverNow, useFx } from './net.ts';
 import type { St } from './net.ts';
-import type { Clue, Fx, PubPlayer, Quiz, Team } from '../shared/types.ts';
+import type { Clue, EventKind, Fx, PubPlayer, Quiz, Team } from '../shared/types.ts';
 import { call } from './net.ts';
 
 export const AVATARS = ['🦊', '🐱', '🐼', '🦉', '🐙', '🤖', '👾', '🦄', '🐸', '🐯', '🐺', '🦁', '🐲', '🐧', '🦈', '🐝'];
@@ -141,25 +142,45 @@ export function clueText(c: Pick<Clue, 'k' | 'v'>) {
   }
 }
 
+// Explicação que aparece ao passar o mouse (ou focar com Tab) em um botão.
+export function Tip({ title, text, foot, align = 'left', below, children }: { title: string; text: string; foot?: string; align?: 'left' | 'right'; below?: boolean; children: ReactNode }) {
+  return (
+    <div className={`has-tip ${align} ${below ? 'below' : ''}`}>
+      {children}
+      <div className="tip-pop" role="tooltip"><b>{title}</b><p>{text}</p>{foot && <span>{foot}</span>}</div>
+    </div>
+  );
+}
+
+export const EVENT_INFO: Record<EventKind, { icon: string; title: string; text: string }> = {
+  leak: { icon: '💧', title: 'Vazamento de dados!', text: 'Invasores ganharam 1 letra da senha de um defensor.' },
+  brute: { icon: '⚡', title: 'Ataque de força bruta!', text: 'Invasores podem atacar agora, sem esperar.' },
+  firewall: { icon: '🛡️', title: 'Firewall ativado!', text: 'Cada defensor ganhou +1 bloqueio.' },
+  quiz: { icon: '❓', title: 'Desafio relâmpago!', text: 'Responda rápido e ganhe +15.' },
+};
+
 // ---------- efeitos globais ----------
-type Toast = { id: number; icon: string; text: string; team?: Team };
+type Toast = { id: number; icon: string; text: string; team?: Team; desc?: string };
 let toastId = 0;
 export function Toasts() {
   const [list, setList] = useState<Toast[]>([]);
   const push = (t: Omit<Toast, 'id'>) => {
     const id = ++toastId;
     setList((l) => [...l.slice(-3), { ...t, id }]);
-    setTimeout(() => setList((l) => l.filter((x) => x.id !== id)), 4000);
+    setTimeout(() => setList((l) => l.filter((x) => x.id !== id)), t.desc ? 5000 : 4000);
   };
   useFx((f: Fx) => {
     if (f.t === 'toast') push(f);
+    if (f.t === 'event') { const e = EVENT_INFO[f.ev]; push({ icon: e.icon, text: e.title, desc: e.text }); }
     if (f.t === 'scan') push({ icon: '🔍', text: 'Alguém analisou sua senha!', team: 'inv' });
     if (f.t === 'kicked') push({ icon: '👋', text: 'Você foi removido da sala' });
     if (f.t === 'closed') push({ icon: '🔒', text: 'O professor fechou a sala' });
   });
   return (
     <div className="toasts" role="status" aria-live="polite">
-      {list.map((t) => <div key={t.id} className={`toast ${t.team ?? ''}`}><span>{t.icon}</span>{t.text}</div>)}
+      {list.map((t) => t.desc ? (
+        <div key={t.id} className="toast big"><span className="toast-icon">{t.icon}</span><div><b>{t.text}</b><small>{t.desc}</small></div></div>
+      ) : <div key={t.id} className={`toast ${t.team ?? ''}`}><span>{t.icon}</span>{t.text}</div>)}
     </div>
   );
 }

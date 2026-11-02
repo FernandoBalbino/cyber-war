@@ -4,13 +4,17 @@ import { activeClues, fits } from '../shared/types.ts';
 import type { LogItem, PubPlayer, Result, ToolKind } from '../shared/types.ts';
 import { call, useFx } from './net.ts';
 import type { St } from './net.ts';
-import { Avatar, DefStrip, Ranking, clueText, useClock } from './ui.tsx';
+import { Avatar, DefStrip, EVENT_INFO, QuizSlot, Ranking, Tip, clueText, useClock } from './ui.tsx';
 
-const TOOLS: { k: ToolKind; icon: typeof Ruler; name: string; tip: string }[] = [
-  { k: 'expand', icon: DatabaseZap, name: 'Expandir banco', tip: '+20 senhas no banco e 1 letra da senha de um defensor. 1 vez por equipe.' },
-  { k: 'len', icon: Ruler, name: 'Comprimento', tip: 'Revela quantos caracteres tem a senha do alvo.' },
-  { k: 'comp', icon: FlaskConical, name: 'Composição', tip: 'Revela se a senha do alvo tem número, maiúscula ou símbolo.' },
-  { k: 'track', icon: Radar, name: 'Rastrear', tip: 'Mostra se o alvo já trocou a senha.' },
+const TOOLS: { k: ToolKind; icon: typeof Ruler; name: string; tip: string; use: string }[] = [
+  { k: 'expand', icon: DatabaseZap, name: 'Expandir banco', use: '1 vez para a equipe toda',
+    tip: 'Coloca +20 senhas no banco, mas revela 1 letra da senha de um defensor sorteado.' },
+  { k: 'len', icon: Ruler, name: 'Comprimento', use: '1 uso por invasor',
+    tip: 'Mostra quantos caracteres tem a senha do alvo (5, 6 ou 7). As de outro tamanho ficam apagadas no banco.' },
+  { k: 'comp', icon: FlaskConical, name: 'Composição', use: '1 uso por invasor',
+    tip: 'Revela se a senha do alvo tem número, letra maiúscula ou símbolo. O banco apaga o que não combina.' },
+  { k: 'track', icon: Radar, name: 'Rastrear', use: '1 uso por invasor',
+    tip: 'Conta se o alvo já trocou a senha. Se trocou, as pistas antigas podem enganar.' },
 ];
 const SCRAMBLE = 'abcdefghijklmnopqrstuvwxyz0123456789@#$';
 
@@ -34,8 +38,9 @@ export function FeedLine({ l, names, words }: { l: LogItem; names: Map<string, P
     return <li className="feed-tool"><Search size={14} /><span>{by && <b>{by}</b>} {l.clue ? <>→ {def}: {clueText(l.clue)}</> : 'expandiu o banco'}</span></li>;
   }
   if (l.k === 'change') return <li className="feed-change"><Shield size={14} /><span><b>{def}</b> trocou para {words ? <span className="mono">{l.w}</span> : '•••'}</span></li>;
-  const ev = { leak: '💧 Vazamento', brute: '⚡ Força bruta', firewall: '🛡️ Firewall', quiz: '❓ Desafio para todos' }[l.ev!];
-  return <li className="feed-event"><span>{ev}{l.clue ? ` · ${def}: ${clueText(l.clue)}` : ''}</span></li>;
+  if (l.k === 'maze') return <li className="feed-change"><Shield size={14} /><span><b>{def}</b> abriu o baú: {l.reward === 'block' ? '+1 bloqueio' : '+20 pts'}</span></li>;
+  const ev = EVENT_INFO[l.ev!];
+  return <li className="feed-event"><span>{ev.icon} {ev.title}{l.clue ? ` ${def}: ${clueText(l.clue)}` : ''}</span></li>;
 }
 
 export function Invader({ v }: { v: St }) {
@@ -150,18 +155,21 @@ export function Invader({ v }: { v: St }) {
       </div>
 
       <aside className="side">
+        <QuizSlot quiz={me.quiz} />
         <section className="panel tools">
           <h3>Ferramentas</h3>
           <div className="tool-grid">
-            {TOOLS.map((t) => {
+            {TOOLS.map((t, i) => {
               const n = left(t.k);
               return (
-                <button key={t.k} type="button" className="tool" title={t.tip} disabled={!live || n <= 0 || known(t.k) || (t.k !== 'expand' && !target)}
-                  onClick={() => useTool(t.k)}>
-                  <t.icon size={22} />
-                  <span>{t.name}</span>
-                  <b className="num">{n}</b>
-                </button>
+                <Tip key={t.k} title={t.name} text={t.tip} foot={t.use} align={i % 2 ? 'right' : 'left'} below>
+                  <button type="button" className="tool" disabled={!live || n <= 0 || known(t.k) || (t.k !== 'expand' && !target)}
+                    onClick={() => useTool(t.k)}>
+                    <t.icon size={22} />
+                    <span>{t.name}</span>
+                    <b className="num">{n}</b>
+                  </button>
+                </Tip>
               );
             })}
           </div>

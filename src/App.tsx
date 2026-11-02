@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useView } from './net.ts';
-import { Hud, Logo, QuizSlot, Toasts, Vignette } from './ui.tsx';
+import { Hud, Logo, Toasts, Vignette } from './ui.tsx';
 import { Join, ProfHome } from './Home.tsx';
 import { Lobby } from './Lobby.tsx';
 import { Defender } from './Defender.tsx';
@@ -48,7 +48,6 @@ export function App() {
       {screen}
       <Vignette />
       <Toasts />
-      {!v.prof && v.room && v.room.phase !== 'end' && <QuizSlot quiz={v.me?.quiz} />}
     </>
   );
 }

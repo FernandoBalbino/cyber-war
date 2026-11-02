@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Trophy, Shield, Swords, LockOpen, Lock, Repeat, Shuffle, LogOut } from 'lucide-react';
+import { Trophy, Shield, Swords, LockOpen, Lock, Repeat, Shuffle, LogOut, Users } from 'lucide-react';
 import type { Results as R } from '../shared/types.ts';
 import { Avatar } from './ui.tsx';
 import { call, keepResult, leaveRoom } from './net.ts';
@@ -45,7 +45,7 @@ export function ResultsBody({ r, me }: { r: R; me?: string }) {
         <section className="panel">
           <h2>Desempenho</h2>
           <table className="perf">
-            <thead><tr><th /><th>Jogador</th><th>Pontos</th><th title="Senhas quebradas / tentativas">Ataques</th><th>Bloq.</th><th>Desafios</th></tr></thead>
+            <thead><tr><th /><th>Jogador</th><th>Pontos</th><th title="Senhas quebradas / tentativas">Ataques</th><th>Bloq.</th><th>Desafios</th><th>Baús</th></tr></thead>
             <tbody>
               {r.players.map((p, i) => (
                 <tr key={p.id} className={`${p.team} ${p.id === me ? 'mine' : ''}`}>
@@ -55,6 +55,7 @@ export function ResultsBody({ r, me }: { r: R; me?: string }) {
                   <td className="num">{p.team === 'inv' ? `${p.hits}/${p.attempts}` : '—'}</td>
                   <td className="num">{p.team === 'def' ? p.blocked : '—'}</td>
                   <td className="num">{p.quiz}</td>
+                  <td className="num">{p.team === 'def' ? p.maze ?? 0 : '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -77,6 +78,7 @@ export function Results({ v }: { v: St }) {
         <div className="prof-actions">
           <button className="btn primary big" onClick={() => next(true)}><Repeat size={20} /> Inverter equipes e jogar</button>
           <button className="btn ghost" onClick={() => next(false)}><Shuffle size={18} /> Sortear novas equipes</button>
+          <button className="btn ghost" onClick={() => call('prof:lobby')}><Users size={18} /> Montar equipes</button>
           <button className="btn ghost" onClick={() => confirm('Fechar a sala para todos?') && leaveRoom(true)}><LogOut size={18} /> Fechar sala</button>
         </div>
       ) : (

@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { Server } from 'socket.io';
 import { Oops, closeRoom, createRoom, fail, rooms } from './game.ts';
 import type { Room } from './game.ts';
-import type { EventKind, ToolKind } from '../shared/types.ts';
+import type { ToolKind } from '../shared/types.ts';
 
 const PORT = Number(process.env.PORT) || 3001;
 const origins = process.env.CLIENT_ORIGIN?.split(',').map((s) => s.trim());
@@ -70,11 +70,10 @@ io.on('connection', (socket) => {
   on('prof:end', () => teacher().finish());
   on('prof:next', (a) => teacher().next(a.swap === true));
   on('prof:kick', (a) => teacher().kick(str(a.id)));
-  on('prof:event', (a) => {
-    const ev = str(a.ev) as EventKind;
-    if (!['leak', 'brute', 'firewall', 'quiz'].includes(ev)) fail('Evento inválido');
-    teacher().event(ev);
-  });
+  on('prof:team', (a) => teacher().setTeam(str(a.id), a.team === 'def' || a.team === 'inv' ? a.team : null));
+  on('prof:minutes', (a) => teacher().setMinutes(Number(a.minutes)));
+  on('prof:extend', () => teacher().extend());
+  on('prof:lobby', () => teacher().toLobby());
   on('prof:close', () => { const r = teacher(); closeRoom(r); room = null; prof = false; console.log(`sala ${r.code} fechada`); });
 
   // alunos
@@ -98,6 +97,8 @@ io.on('connection', (socket) => {
   on('change', (a) => { const { r, p } = player(); r.change(p, Number(a.pos), str(a.ch)); });
   on('block', () => { const { r, p } = player(); r.block(p); });
   on('answer', (a) => { const { r, p } = player(); return r.answer(p, Number(a.id), Number(a.choice)); });
+  on('maze:start', () => { const { r, p } = player(); return r.mazeStart(p); });
+  on('maze:done', (a) => { const { r, p } = player(); return r.mazeDone(p, Number(a.id), str(a.path), str(a.choice)); });
 
   socket.on('disconnect', leave);
 });

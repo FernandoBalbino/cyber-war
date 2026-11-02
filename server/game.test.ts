@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Room, Oops } from './game.ts';
 import { WORDS, makeBank } from './words.ts';
+import { makeMaze, play, solve } from '../shared/maze.ts';
 import type { Fx, View } from '../shared/types.ts';
 
 function setup(n = 4) {
@@ -98,4 +99,53 @@ test('fim por tempo dá 100 a quem sobreviveu', () => {
   r.finish();
   for (const d of defs) assert.equal(d.score, 100);
   assert.equal(r.results?.winner, 'def');
+});
+
+test('labirinto: só vale o caminho que pega as 4 peças e termina no baú', () => {
+  for (let seed = 1; seed <= 30; seed++) {
+    const m = makeMaze(seed * 7919);
+    assert.equal(m.items.length, 4);
+    assert.ok(m.traps.length >= 3, `poucas armadilhas na semente ${seed}`);
+    const path = solve(m);
+    assert.ok(path.length > 10, `sem solução na semente ${seed}`);
+    assert.ok(play(m, path));
+    assert.equal(play(m, path + 'U'), false);
+    assert.equal(play(m, path.slice(0, -1)), false);
+    assert.equal(play(m, 'U' + path), false); // bate na parede de cima
+  }
+});
+
+test('baú do labirinto: servidor confere caminho, tempo e limite de bloqueios', () => {
+  const { r, defs } = setup(2);
+  const [d] = defs;
+  const { id, seed } = r.mazeStart(d);
+  const path = solve(makeMaze(seed));
+  assert.throws(() => r.mazeDone(d, id, path, 'block'), /Rápido demais/);
+  d.maze!.at -= 120_000;
+  assert.throws(() => r.mazeDone(d, id, path.slice(1), 'block'), /inválido/);
+  d.blocks = 3;
+  assert.deepEqual(r.mazeDone(d, id, path, 'block'), { reward: 'points' }); // já está no máximo
+  assert.equal(d.score, 20);
+  assert.throws(() => r.mazeStart(d), /Novo labirinto/);
+});
+
+test('professor monta equipes, muda o tempo e dá +2 min', () => {
+  const sent: unknown[] = [];
+  const r = new Room('T2', () => sent.push(1));
+  const [a, b, c] = ['Ana', 'Bia', 'Caio'].map((n, i) => r.join(n, i, `s${i}`));
+  r.setTeam(a.id, 'inv'); r.setTeam(b.id, 'inv');
+  assert.throws(() => r.setMinutes(1), /entre 3 e 60/);
+  r.setMinutes(20);
+  r.start();
+  assert.equal(a.team, 'inv'); assert.equal(b.team, 'inv'); assert.equal(c.team, 'def');
+  r.goLive();
+  const end = r.endsAt;
+  assert.ok(Math.abs(end - Date.now() - 20 * 60_000) < 1000);
+  r.extend();
+  assert.equal(r.endsAt, end + 120_000);
+  r.event('firewall'); r.event('firewall'); r.event('firewall');
+  assert.equal(c.blocks, 3);
+  r.finish(); r.toLobby();
+  r.setTeam(a.id, 'def'); r.setTeam(c.id, 'def'); r.setTeam(b.id, 'def');
+  assert.throws(() => r.start(), /duas equipes/);
 });

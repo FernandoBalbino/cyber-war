@@ -1,0 +1,140 @@
+{
+  "s5": {
+    "file": "voice/s5.mp3",
+    "duration": 36.886,
+    "cues": {
+      "tools": 3.84,
+      "len": 5.6,
+      "comp": 9.2,
+      "track": 13.54,
+      "expand": 16.9,
+      "letter": 23.16,
+      "filter": 26.12,
+      "analyze": 31.34,
+      "ten": 35.94
+    }
+  },
+  "s8": {
+    "file": "voice/s8.mp3",
+    "duration": 37.931,
+    "cues": {
+      "go": 1.48,
+      "len": 4.22,
+      "six": 5.7,
+      "smaller": 8.32,
+      "malu": 9.2,
+      "miss": 11.92,
+      "theo": 13.94,
+      "block": 16.96,
+      "plus": 18.6,
+      "caio": 21.3,
+      "zero": 24.1,
+      "old": 24.9,
+      "comp": 27.7,
+      "num": 29.32,
+      "join": 30.58,
+      "attack": 32.6,
+      "hit": 33.64,
+      "pts": 36.98
+    }
+  },
+  "s1": {
+    "file": "voice/s1.mp3",
+    "duration": 9.561,
+    "cues": {
+      "title": 2.28,
+      "ops": 4.84,
+      "weapon": 6.52,
+      "pw": 9.02
+    }
+  },
+  "s2": {
+    "file": "voice/s2.mp3",
+    "duration": 16.353,
+    "cues": {
+      "split": 1.6,
+      "def": 3.7,
+      "inv": 10.4,
+      "vs": 15.04
+    }
+  },
+  "s3": {
+    "file": "voice/s3.mp3",
+    "duration": 20.271,
+    "cues": {
+      "bank": 2.44,
+      "words": 6.46,
+      "extra": 8.98,
+      "secret": 12.02,
+      "hide": 16.54,
+      "who": 18.64
+    }
+  },
+  "s4": {
+    "file": "voice/s4.mp3",
+    "duration": 24.921,
+    "cues": {
+      "see": 0.92,
+      "pickDef": 4.24,
+      "pickPw": 5.76,
+      "attack": 7.12,
+      "minute": 11.68,
+      "miss": 12.42,
+      "team": 15.86,
+      "hit": 18.58,
+      "vig": 21.22,
+      "points": 24
+    }
+  },
+  "s6": {
+    "file": "voice/s6.mp3",
+    "duration": 40.829,
+    "cues": {
+      "alert": 5.64,
+      "four": 8.28,
+      "blocked": 10.14,
+      "change": 13.88,
+      "maze": 21.26,
+      "pieces": 25.88,
+      "trap": 30.06,
+      "chest": 31.16,
+      "quiz": 35.6,
+      "quizPts": 39.86
+    }
+  },
+  "s7": {
+    "file": "voice/s7.mp3",
+    "duration": 11.468,
+    "cues": {
+      "ev": 3.12,
+      "leak": 4.5,
+      "brute": 6.32,
+      "fw": 7.5,
+      "quiz": 9.16
+    }
+  },
+  "s9": {
+    "file": "voice/s9.mp3",
+    "duration": 19.069,
+    "cues": {
+      "time": 0.4,
+      "survive": 4.12,
+      "allDown": 7.06,
+      "sum": 11.22,
+      "win": 12.9,
+      "swap": 16.14
+    }
+  },
+  "s10": {
+    "file": "voice/s10.mp3",
+    "duration": 11.729,
+    "cues": {
+      "simple": 0.96,
+      "strong": 3.12,
+      "mixed": 4.72,
+      "yours": 6.22,
+      "ready": 8.46,
+      "go": 11.08
+    }
+  }
+}

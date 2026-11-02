@@ -1,17 +1,27 @@
 import { LogOut, Shield, Swords, X } from 'lucide-react';
-import type { PubPlayer } from '../shared/types.ts';
+import type { PubPlayer, Team } from '../shared/types.ts';
 import { Avatar, Logo, TEAM } from './ui.tsx';
 import { leaveRoom } from './net.ts';
 import type { St } from './net.ts';
 
 // Grade de jogadores; vira duas colunas quando as equipes já foram sorteadas.
-export function Roster({ players = [], me, onKick }: { players?: PubPlayer[]; me?: string; onKick?: (id: string) => void }) {
+export function Roster({ players = [], me, onKick, onTeam }: { players?: PubPlayer[]; me?: string; onKick?: (id: string) => void; onTeam?: (id: string, t: Team | null) => void }) {
   const sorted = players.some((p) => p.team);
   const card = (p: PubPlayer, i: number) => (
     <li key={p.id} className={`pcard ${p.team ?? ''} ${p.id === me ? 'mine' : ''} ${p.on ? '' : 'off'}`} style={{ animationDelay: `${i * 40}ms` }}>
       <Avatar av={p.av} team={p.team} size={44} />
       <span className="pcard-name">{p.name}</span>
       {onKick && <button type="button" className="kick" onClick={() => onKick(p.id)} aria-label={`Remover ${p.name}`}><X size={14} /></button>}
+      {onTeam && (
+        <div className="team-pick">
+          {(['def', 'inv'] as const).map((t) => (
+            <button key={t} type="button" className={`${t} ${p.team === t ? 'on' : ''}`} aria-pressed={p.team === t}
+              title={t === 'def' ? 'Defensor' : 'Invasor'} onClick={() => onTeam(p.id, p.team === t ? null : t)}>
+              {t === 'def' ? <Shield size={15} /> : <Swords size={15} />}
+            </button>
+          ))}
+        </div>
+      )}
     </li>
   );
   if (!sorted) return <ul className="roster">{players.map(card)}</ul>;
@@ -28,7 +38,7 @@ export function Roster({ players = [], me, onKick }: { players?: PubPlayer[]; me
   return (
     <>
       <div className="teams">{col('def')}{col('inv')}</div>
-      {rest.length > 0 && <ul className="roster rest">{rest.map(card)}</ul>}
+      {rest.length > 0 && <div className="team-col rest"><h3>Sem equipe <span className="num">{rest.length}</span></h3><ul className="roster">{rest.map(card)}</ul></div>}
     </>
   );
 }

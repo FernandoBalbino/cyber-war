@@ -1,5 +1,6 @@
-import { randomUUID } from 'node:crypto';
-import { activeClues, fits } from '../shared/types.ts';
+import { randomInt, randomUUID } from 'node:crypto';
+import { MAX_BLOCKS, MAZE_PTS, activeClues, fits } from '../shared/types.ts';
+import { makeMaze, play } from '../shared/maze.ts';
 import type { Board, Clue, ClueKind, EventKind, Fx, LogItem, Me, Phase, PubPlayer, Result, Results, Team, ToolKind, View } from '../shared/types.ts';
 import { makeBank, mutate, shuffle } from './words.ts';
 import { QUESTIONS } from './quiz.ts';
@@ -7,10 +8,12 @@ import { QUESTIONS } from './quiz.ts';
 // Ajustes do jogo num lugar só. CW_SPEED > 1 encurta os tempos (apenas para testes locais).
 const SPEED = Number(process.env.CW_SPEED) || 1;
 export const T = {
-  prep: 120_000 / SPEED, live: 15 * 60_000 / SPEED, cooldown: 60_000 / SPEED,
-  window: 4_000, quizEvery: 120_000 / SPEED, quizTime: 20_000,
+  prep: 120_000 / SPEED, cooldown: 60_000 / SPEED, window: 4_000, quizEvery: 120_000 / SPEED, quizTime: 20_000,
+  eventMin: 60_000 / SPEED, eventMax: 180_000 / SPEED, // evento surpresa a cada 1–3 min
+  maze: 45_000 / SPEED, // espera entre um labirinto e outro
 };
-const PTS = { hit: 100, clue: 10, survive: 100, block: 25, quiz: 15 };
+const PTS = { hit: 100, clue: 10, survive: 100, block: 25, quiz: 15, maze: MAZE_PTS };
+const EVENTS: EventKind[] = ['leak', 'brute', 'firewall', 'quiz'];
 const BANK_SIZE = 100, EXPAND_SIZE = 20, CAMO = 3, MAX_PLAYERS = 60;
 const USES = { len: 1, comp: 1, track: 1 };
 
@@ -30,6 +33,7 @@ export type P = {
   entry: number | null; changed: boolean; blocks: number; downBy: string | null; attacks: number; blocked: number;
   nextAt: number; uses: { len: number; comp: number; track: number }; attempts: number; hits: number;
   quiz: OpenQuiz | null; quizAt: number; quizRight: number; asked: Set<number>;
+  maze: { id: number; seed: number; at: number } | null; mazeNext: number; mazes: number;
 };
 type Pending = { id: number; inv: string; def: string; entry: number; w: string; until: number };
 
@@ -37,7 +41,7 @@ export class Room {
   code: string; send: Send;
   profToken = randomUUID(); profSid: string | null = null;
   players = new Map<string, P>();
-  phase: Phase = 'lobby'; endsAt = 0; round = 0;
+  phase: Phase = 'lobby'; endsAt = 0; round = 0; minutes = 15; eventAt = 0;
   bank: { id: number; w: string }[] = []; nextId = 1; used = new Set<string>();
   owner = new Map<number, string>(); // senha -> defensor (segredo, nunca sai do servidor)
   strikes = new Map<string, Set<number>>();
@@ -64,6 +68,7 @@ export class Room {
       id: randomUUID().slice(0, 8), token: randomUUID(), name, av: Number.isInteger(av) && av >= 0 && av < 16 ? av : 0,
       team: null, sid: null, score: 0, total: 0, entry: null, changed: false, blocks: 1, downBy: null, attacks: 0, blocked: 0,
       nextAt: 0, uses: { ...USES }, attempts: 0, hits: 0, quiz: null, quizAt: 0, quizRight: 0, asked: new Set(),
+      maze: null, mazeNext: 0, mazes: 0,
     };
     this.players.set(p.id, p);
     if (this.phase === 'prep' || this.phase === 'live') this.enlist(p);
@@ -125,6 +130,7 @@ export class Room {
     Object.assign(p, {
       score: 0, entry: null, changed: false, blocks: 1, downBy: null, attacks: 0, blocked: 0,
       nextAt: 0, uses: { ...USES }, attempts: 0, hits: 0, quiz: null, quizAt: 0, quizRight: 0,
+      maze: null, mazeNext: 0, mazes: 0,
     });
   }
 
@@ -138,6 +144,34 @@ export class Room {
     this.touch('players'); this.mark(...on);
   }
 
+  // professor escolhe a equipe de cada aluno (ex.: separar por fileiras)
+  setTeam(id: string, team: Team | null) {
+    if (this.phase !== 'lobby') fail('Monte as equipes antes de começar');
+    const p = this.players.get(id) ?? fail('Aluno não encontrado');
+    p.team = team;
+    this.touch('players'); this.mark(p);
+  }
+
+  setMinutes(m: number) {
+    if (this.phase === 'live') fail('Use +2 min durante a partida');
+    if (!Number.isInteger(m) || m < 3 || m > 60) fail('Escolha entre 3 e 60 minutos');
+    this.minutes = m;
+    this.touch('room');
+  }
+
+  extend() {
+    if (this.phase !== 'live') fail('Só durante a partida');
+    this.endsAt += 120_000;
+    this.toast('⏱️', 'O professor deu +2 minutos!');
+    this.touch('room');
+  }
+
+  toLobby() {
+    if (this.phase !== 'end') fail('Termine a partida primeiro');
+    this.phase = 'lobby';
+    this.touch('room', 'players');
+  }
+
   start() {
     if (this.phase === 'prep' || this.phase === 'live') fail('Partida em andamento');
     for (const p of this.list()) if (!p.sid) p.team = null; // quem está offline fica de fora
@@ -147,7 +181,7 @@ export class Room {
     for (const p of shuffle(on.filter((p) => !p.team))) {
       p.team = this.list('def').length < this.list('inv').length ? 'def' : 'inv';
     }
-    if (!this.list('def').length || !this.list('inv').length) this.sortTeams();
+    if (!this.list('def').length || !this.list('inv').length) fail('Coloque alunos nas duas equipes');
 
     this.round++;
     this.used = new Set();
@@ -165,8 +199,9 @@ export class Room {
 
   goLive() {
     const now = Date.now();
-    this.phase = 'live'; this.endsAt = now + T.live;
-    for (const d of this.list('def')) d.quizAt = now + 30_000 + rnd(60_000);
+    this.phase = 'live'; this.endsAt = now + this.minutes * 60_000;
+    this.eventAt = now + T.eventMin + rnd(T.eventMax - T.eventMin);
+    for (const d of this.list('def')) d.quizAt = now + (30_000 + rnd(60_000)) / SPEED;
     this.toast('⚡', 'Valendo! Ataques liberados.');
     this.touch('room'); this.mark(...this.list());
   }
@@ -177,25 +212,22 @@ export class Room {
     this.start();
   }
 
+  // eventos surpresa: disparados sozinhos pelo relógio da partida
   event(ev: EventKind) {
-    if (this.phase !== 'live' && !(ev === 'quiz' && this.phase === 'prep')) fail('Só durante a partida');
     const now = Date.now();
     const item: LogItem = { at: now, k: 'event', ev };
     if (ev === 'leak') {
       const d = pick(this.list('def').filter((x) => !x.downBy));
-      if (!d) fail('Nenhum defensor ativo');
+      if (!d) return;
       Object.assign(item, { def: d.id, clue: this.reveal(d) });
-      this.toast('💧', 'Vazamento de dados! Invasores ganharam uma pista.');
     } else if (ev === 'brute') {
-      for (const p of this.list('inv')) { p.nextAt = now; this.mark(p); }
-      this.toast('⚡', 'Força bruta! Tentativas liberadas agora.', 'inv');
+      for (const p of this.list('inv')) { p.nextAt = Math.min(p.nextAt, now); this.mark(p); }
     } else if (ev === 'firewall') {
-      for (const p of this.list('def')) { p.blocks++; this.mark(p); }
-      this.toast('🛡️', 'Firewall! Defensores ganharam +1 bloqueio.', 'def');
+      for (const p of this.list('def')) { p.blocks = Math.min(MAX_BLOCKS, p.blocks + 1); this.mark(p); }
     } else {
       for (const p of this.list()) if (p.sid && !p.quiz) this.ask(p);
-      this.toast('❓', 'Desafio relâmpago para todos!');
     }
+    this.broadcast({ t: 'event', ev });
     this.addLog(item);
   }
 
@@ -365,11 +397,40 @@ export class Room {
     let block = false;
     if (correct) {
       p.score += PTS.quiz; p.quizRight++;
-      if (p.team === 'def' && p.quizRight % 2 === 0) { p.blocks++; block = true; }
+      if (p.team === 'def' && p.quizRight % 2 === 0 && p.blocks < MAX_BLOCKS) { p.blocks++; block = true; }
       this.touch('players');
     }
     this.mark(p);
     return { correct, answer: z.a, tip: QUESTIONS[z.qi].tip, block };
+  }
+
+  // ---------- labirinto (jogado no navegador; o servidor só confere o caminho no final) ----------
+  mazeStart(p: P) {
+    if (this.phase !== 'prep' && this.phase !== 'live') fail('Fora da partida');
+    if (p.team !== 'def') fail('Só defensores jogam o labirinto');
+    const now = Date.now();
+    if (!p.maze) {
+      if (now < p.mazeNext) fail(`Novo labirinto em ${Math.ceil((p.mazeNext - now) / 1000)}s`);
+      p.maze = { id: this.seq++, seed: randomInt(2 ** 31), at: now };
+    }
+    this.mark(p);
+    return { id: p.maze.id, seed: p.maze.seed };
+  }
+
+  mazeDone(p: P, id: number, path: string, choice: string) {
+    if (this.phase !== 'prep' && this.phase !== 'live') fail('Fora da partida');
+    const z = p.maze;
+    if (!z || z.id !== id) fail('Labirinto expirado');
+    if (path.length > 4000) fail('Caminho inválido');
+    if (Date.now() - z.at < path.length * 60) fail('Rápido demais');
+    if (!play(makeMaze(z.seed), path)) fail('Caminho inválido');
+    p.maze = null; p.mazeNext = Date.now() + T.maze; p.mazes++;
+    const reward = choice === 'block' && !p.downBy && p.blocks < MAX_BLOCKS ? 'block' : 'points';
+    if (reward === 'block') p.blocks++;
+    else p.score += PTS.maze;
+    this.addLog({ at: Date.now(), k: 'maze', def: p.id, reward });
+    this.touch('players'); this.mark(p);
+    return { reward };
   }
 
   // ---------- relógio ----------
@@ -379,6 +440,10 @@ export class Room {
     if (now >= this.endsAt) return this.finish();
     for (const a of this.pending.filter((x) => x.until <= now)) this.resolve(a, false);
     if (this.phase !== 'live') return; // a última senha pode ter caído agora
+    if (now >= this.eventAt) {
+      this.eventAt = now + T.eventMin + rnd(T.eventMax - T.eventMin);
+      this.event(pick(EVENTS));
+    }
     for (const p of this.list()) {
       if (p.quiz && now > p.quiz.until + 1500) { p.quiz = null; this.mark(p); }
       if (p.team === 'def' && p.sid && !p.quiz && p.quizAt && now >= p.quizAt) {
@@ -408,7 +473,7 @@ export class Room {
       })),
       players: players.map((p) => ({
         id: p.id, name: p.name, av: p.av, team: p.team!, score: p.score, total: p.total,
-        attempts: p.attempts, hits: p.hits, blocked: p.blocked, quiz: p.quizRight,
+        attempts: p.attempts, hits: p.hits, blocked: p.blocked, quiz: p.quizRight, maze: p.mazes,
       })).sort((a, b) => b.score - a.score),
       attempts: tries.length, hits: tries.filter((l) => l.r === 'hit').length, blocks: tries.filter((l) => l.r === 'blocked').length,
     };
@@ -447,7 +512,7 @@ export class Room {
   view(p: P | null, s: Set<Section>, me: boolean): View {
     const v: View = { now: Date.now() };
     const prof = p === null, inv = prof || p.team === 'inv';
-    if (s.has('room')) v.room = { code: this.code, phase: this.phase, endsAt: this.endsAt, round: this.round };
+    if (s.has('room')) v.room = { code: this.code, phase: this.phase, endsAt: this.endsAt, round: this.round, minutes: this.minutes };
     if (s.has('players')) v.players = this.list().map((x): PubPlayer => ({
       id: x.id, name: x.name, av: x.av, team: x.team, score: x.score, total: x.total, on: !!x.sid,
       down: x.downBy ? this.name(x.downBy) : undefined,
@@ -484,7 +549,7 @@ export class Room {
     };
     if (p.team === 'def' && this.phase !== 'lobby') {
       Object.assign(m, {
-        pw: this.pw(p), changed: p.changed, blocks: p.blocks,
+        pw: this.pw(p), changed: p.changed, blocks: p.blocks, maze: p.maze && { id: p.maze.id, seed: p.maze.seed }, mazeNext: p.mazeNext,
         threats: this.pending.filter((a) => a.def === p.id).map((a) => ({ by: this.name(a.inv), until: a.until })),
       });
     }
